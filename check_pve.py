@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.3.1
+# Version: 1.6.0+is4it.1.3.2
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -151,7 +151,7 @@ class CheckPVE:
     """Check command for Proxmox VE."""
 
     SHORTNAME = "PVE"
-    VERSION = "1.6.0+is4it.1.3.1"
+    VERSION = "1.6.0+is4it.1.3.2"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -1242,10 +1242,14 @@ class CheckPVE:
                 node_name = self.options.node
             if node_name != vm.get("node", None):
                 continue
+            if idx:
+                if idx not in (vm_name, vm_id):
+                    continue
+                found = True
             url = self.get_url(f"nodes/{node_name}/{vm_type}/{vm_id}/snapshot")
-            data = self.request(url)
+            snapshots = self.request(url)
 
-            for snapshot in data:
+            for snapshot in snapshots:
                 snapshot_name = snapshot.get("name", None)
 
                 if snapshot_name == "current":
@@ -1270,10 +1274,6 @@ class CheckPVE:
                     self.add_detail(detail, CheckState.WARNING)
                 else:
                     self.add_detail(detail, CheckState.OK)
-
-            if idx and idx in (vm.get("name", None), vm.get("vmid", None)):
-                found = True
-                break
 
         if idx and not found:
             self.check_result = CheckState.UNKNOWN
