@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.0.0
+# Version: 1.6.0+is4it.1.0.1
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -27,7 +27,7 @@
 
 import re
 import sys
-from typing import Callable, Dict, Optional, Union, List
+from typing import Callable, Dict, NoReturn, Optional, Union, List
 
 try:
     import argparse
@@ -126,6 +126,16 @@ class CheckThreshold:
         return thresholds
 
 
+class CheckArgumentParser(argparse.ArgumentParser):
+    """Argument parser reporting usage errors as UNKNOWN check result."""
+
+    def error(self, message: str) -> NoReturn:
+        """Print status line followed by usage and exit with UNKNOWN."""
+        CheckPVE.output(
+            CheckState.UNKNOWN, f"{self.prog}: error: {message}\n{self.format_usage().rstrip()}"
+        )
+
+
 class RequestError(Exception):
     """Exception for request related errors."""
 
@@ -139,7 +149,7 @@ class RequestError(Exception):
 class CheckPVE:
     """Check command for Proxmox VE."""
 
-    VERSION = "1.6.0+is4it.1.0.0"
+    VERSION = "1.6.0+is4it.1.0.1"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -1426,7 +1436,7 @@ class CheckPVE:
         Accept an optional argv list for testing convenience and return the parsed
         options namespace.
         """
-        p = argparse.ArgumentParser(description="Check command for PVE hosts via API")
+        p = CheckArgumentParser(description="Check command for PVE hosts via API")
 
         p.add_argument(
             "--version", help="Show version of check command", action="store_true", default=False
