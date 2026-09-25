@@ -152,3 +152,20 @@ def test_check_task_queue_empty_response(
         in pve_instance.check_message + pve_instance.get_details()
     )
     assert pve_instance.check_result == CheckState.UNKNOWN
+
+
+@patch.object(CheckPVE, "request")
+def test_check_task_queue_no_tasks(
+    mock_request: MagicMock,
+    pve_instance: CheckPVE,
+) -> None:
+    """An empty task list is a valid state, not an API error."""
+    mock_request.return_value = []
+    pve_instance.options.node = None
+    pve_instance.options.threshold_warning = {}
+    pve_instance.options.threshold_critical = {}
+
+    pve_instance.check_task_queue()
+
+    assert pve_instance.check_result == CheckState.OK
+    assert pve_instance.check_message == "Cluster: 0 tasks running"
