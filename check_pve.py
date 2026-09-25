@@ -739,7 +739,12 @@ class CheckPVE:
             self.check_message = "Ceph Cluster is in unknown state"
 
     def check_network_status(self, name: Optional[str] = None) -> None:
-        """Check network interface status and bond health."""
+        """Check network interface status and bond health.
+
+        The PVE API only exposes the administrative state (IFF_UP flag) of an
+        interface. Link state (carrier/operstate) and LACP state of bond members
+        are not available, so a lost link on an interface that is up is not detected.
+        """
         url = self.get_url(f"nodes/{self.options.node}/network")
         data = self.request(url)
 

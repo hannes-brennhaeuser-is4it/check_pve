@@ -362,6 +362,8 @@ You can also filter by VM/Container ID:
 
 **Check network interface status**
 
+This mode checks the administrative state of interfaces and bond members (whether they are set up, e.g. via `ifup`). It does not check the link state: a pulled cable, a switch port that is down, or a failed LACP negotiation is not detected, because the PVE API does not expose carrier, operstate, or bond member state.
+
 Check all network interfaces on a node:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m network-status -n node1
