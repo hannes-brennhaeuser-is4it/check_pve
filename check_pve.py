@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.3.6
+# Version: 1.6.0+is4it.1.4.0
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -151,7 +151,7 @@ class CheckPVE:
     """Check command for Proxmox VE."""
 
     SHORTNAME = "PVE"
-    VERSION = "1.6.0+is4it.1.3.6"
+    VERSION = "1.6.0+is4it.1.4.0"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -162,6 +162,8 @@ class CheckPVE:
         "KiB": 2**10,
         "B": 1,
     }
+    # State for connection and login failures; CRITICAL in api-connection mode
+    api_error_state = CheckState.UNKNOWN
 
     def check_output(self) -> None:
         """Print check command output with perfdata and return code."""
@@ -227,11 +229,11 @@ class CheckPVE:
             else:
                 self.output(CheckState.UNKNOWN, f"Unsupported request method: {method}")
         except requests.exceptions.ConnectTimeout:
-            self.output(CheckState.UNKNOWN, "Could not connect to PVE API: Connection timeout")
+            self.output(self.api_error_state, "Could not connect to PVE API: Connection timeout")
             return None
         except requests.exceptions.SSLError:
             self.output(
-                CheckState.UNKNOWN, "Could not connect to PVE API: Certificate validation failed"
+                self.api_error_state, "Could not connect to PVE API: Certificate validation failed"
             )
             return None
         except requests.exceptions.ConnectionError as e:
@@ -241,7 +243,7 @@ class CheckPVE:
             msg = str(e).lower()
             if "certificate verify failed" in msg or "ssl" in msg and "certificate" in msg:
                 self.output(
-                    CheckState.UNKNOWN,
+                    self.api_error_state,
                     "Could not connect to PVE API: Certificate validation failed",
                 )
             elif (
@@ -251,17 +253,17 @@ class CheckPVE:
                 or "gaierror" in msg
             ):
                 self.output(
-                    CheckState.UNKNOWN, "Could not connect to PVE API: Failed to resolve hostname"
+                    self.api_error_state, "Could not connect to PVE API: Failed to resolve hostname"
                 )
             else:
                 # Fallback to showing the underlying exception message for clarity
-                self.output(CheckState.UNKNOWN, f"Could not connect to PVE API: {str(e)}")
+                self.output(self.api_error_state, f"Could not connect to PVE API: {str(e)}")
             return None
         except requests.exceptions.Timeout:
-            self.output(CheckState.UNKNOWN, "Could not fetch data from API: Read timeout")
+            self.output(self.api_error_state, "Could not fetch data from API: Read timeout")
             return None
         except requests.exceptions.RequestException as e:
-            self.output(CheckState.UNKNOWN, f"Could not fetch data from API: {type(e).__name__}")
+            self.output(self.api_error_state, f"Could not fetch data from API: {type(e).__name__}")
             return None
 
         if response.ok:
@@ -281,7 +283,7 @@ class CheckPVE:
         if kwargs.get("raise_error", False):
             raise RequestError(message, response.status_code)
 
-        self.output(CheckState.UNKNOWN, message)
+        self.output(self.api_error_state, message)
 
     def get_ticket(self) -> str:
         """Perform login and fetch ticket for further API calls."""
@@ -1099,6 +1101,14 @@ class CheckPVE:
         url = self.get_url(f"nodes/{self.options.node}/storage/{name}/status")
         self.check_api_value(url, f"Usage of storage '{name}' is")
 
+    def check_api_connection(self) -> None:
+        """Check that the PVE API is reachable and accepts the credentials."""
+        # Token authentication performs no login request, so an authenticated
+        # call is needed to validate the credentials.
+        self.request(self.get_url("version"))
+        self.check_result = CheckState.OK
+        self.check_message = f"Login to PVE API as '{self.options.api_user}' succeeded"
+
     def check_version(self) -> None:
         """Check PVE version."""
         url = self.get_url("version")
@@ -1428,7 +1438,9 @@ class CheckPVE:
         """Execute the real check command."""
         self.check_result = CheckState.OK
 
-        if self.options.mode == "cluster":
+        if self.options.mode == "api-connection":
+            self.check_api_connection()
+        elif self.options.mode == "cluster":
             self.check_cluster_status()
         elif self.options.mode == "version":
             self.check_version()
@@ -1561,6 +1573,7 @@ class CheckPVE:
             "-m",
             "--mode",
             choices=(
+                "api-connection",
                 "cluster",
                 "version",
                 "cpu",
@@ -1751,6 +1764,7 @@ class CheckPVE:
             p.error(f"The following arguments are required: {', '.join(missing)}")
 
         if not options.node and options.mode not in [
+            "api-connection",
             "cluster",
             "vm",
             "vm_status",
@@ -1799,6 +1813,9 @@ class CheckPVE:
         self.__cookies = {}
 
         self.parse_args()
+
+        if self.options.mode == "api-connection":
+            self.api_error_state = CheckState.CRITICAL
 
         if self.options.api_insecure:
             # disable urllib3 warning about insecure requests
