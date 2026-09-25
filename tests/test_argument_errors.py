@@ -40,6 +40,6 @@ def test_argument_error_exits_unknown(
 
     assert exc.value.code == CheckState.UNKNOWN.value
     status, usage = capsys.readouterr().out.splitlines()[:2]
-    assert status.startswith("UNKNOWN - ")
+    assert status.startswith("PVE UNKNOWN: ")
     assert error in status
     assert usage.startswith("usage: ")

@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.0.3
+# Version: 1.6.0+is4it.1.1.0
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -40,7 +40,7 @@ try:
 
 except ImportError as e:
     # CheckState is not defined yet, 3 is UNKNOWN
-    print(f"UNKNOWN - Missing python module: {str(e)}")
+    print(f"PVE UNKNOWN: Missing python module: {str(e)}")
     sys.exit(3)
 
 # Timeout for API requests in seconds
@@ -150,7 +150,8 @@ class RequestError(Exception):
 class CheckPVE:
     """Check command for Proxmox VE."""
 
-    VERSION = "1.6.0+is4it.1.0.3"
+    SHORTNAME = "PVE"
+    VERSION = "1.6.0+is4it.1.1.0"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -173,8 +174,7 @@ class CheckPVE:
     @staticmethod
     def output(rc: CheckState, message: str) -> None:
         """Print message to stdout and exit with given return code."""
-        prefix = rc.name
-        print(f"{prefix} - {message}")
+        print(f"{CheckPVE.SHORTNAME} {rc.name}: {message}")
         sys.exit(rc.value)
 
     def get_url(self, command: str) -> str:
