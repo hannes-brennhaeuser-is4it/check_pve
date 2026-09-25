@@ -43,3 +43,10 @@ def test_argument_error_exits_unknown(
     assert status.startswith("PVE UNKNOWN: ")
     assert error in status
     assert usage.startswith("usage: ")
+
+
+@pytest.mark.parametrize("mode", ["vm", "vm_status", "vm-status"])
+def test_vm_modes_do_not_require_node(pve_instance: CheckPVE, mode: str) -> None:
+    args = pve_instance.parse_args(shlex.split(f"{CLI_ARGS} -m {mode} --vmid 100"))
+
+    assert args.mode == mode and args.node is None
