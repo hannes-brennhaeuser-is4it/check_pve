@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.0.2
+# Version: 1.6.0+is4it.1.0.3
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -39,8 +39,9 @@ try:
     from requests.packages.urllib3.exceptions import InsecureRequestWarning
 
 except ImportError as e:
-    print(f"Missing python module: {str(e)}")
-    sys.exit(255)
+    # CheckState is not defined yet, 3 is UNKNOWN
+    print(f"UNKNOWN - Missing python module: {str(e)}")
+    sys.exit(3)
 
 # Timeout for API requests in seconds
 CHECK_API_TIMEOUT = 30
@@ -149,7 +150,7 @@ class RequestError(Exception):
 class CheckPVE:
     """Check command for Proxmox VE."""
 
-    VERSION = "1.6.0+is4it.1.0.2"
+    VERSION = "1.6.0+is4it.1.0.3"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
