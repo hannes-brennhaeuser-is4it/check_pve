@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0
+# Version: 1.6.0+is4it.1.0.0
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -139,7 +139,7 @@ class RequestError(Exception):
 class CheckPVE:
     """Check command for Proxmox VE."""
 
-    VERSION = "1.6.0"
+    VERSION = "1.6.0+is4it.1.0.0"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -174,7 +174,11 @@ class CheckPVE:
 
     def get_file_line(self, filename: str) -> str:
         """Read the first line of a file and return it without the newline."""
-        return open(filename, "r").readline().strip()
+        try:
+            with open(filename, "r") as file:
+                return file.readline().strip()
+        except OSError:
+            self.output(CheckState.UNKNOWN, "Could not read credentials file")
 
     def request(self, url: str, method: str = "get", **kwargs: Dict) -> Union[Dict, None]:
         """Execute request against Proxmox VE API and return json data."""
@@ -228,6 +232,12 @@ class CheckPVE:
             else:
                 # Fallback to showing the underlying exception message for clarity
                 self.output(CheckState.UNKNOWN, f"Could not connect to PVE API: {str(e)}")
+            return None
+        except requests.exceptions.Timeout:
+            self.output(CheckState.UNKNOWN, "Could not fetch data from API: Read timeout")
+            return None
+        except requests.exceptions.RequestException as e:
+            self.output(CheckState.UNKNOWN, f"Could not fetch data from API: {type(e).__name__}")
             return None
 
         if response.ok:
@@ -1734,6 +1744,16 @@ class CheckPVE:
             self.__headers["Authorization"] = f"PVEAPIToken={token}"
 
 
+def main() -> None:
+    """Run the check and map any unexpected error to UNKNOWN."""
+    try:
+        pve = CheckPVE()
+        pve.check()
+    except Exception as e:
+        # Uncaught exceptions would exit with 1 (WARNING); details are omitted
+        # from the output as they may expose internals.
+        CheckPVE.output(CheckState.UNKNOWN, f"Unexpected error: {type(e).__name__}")
+
+
 if __name__ == "__main__":
-    pve = CheckPVE()
-    pve.check()
+    main()
