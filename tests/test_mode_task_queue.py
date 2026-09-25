@@ -169,3 +169,19 @@ def test_check_task_queue_no_tasks(
 
     assert pve_instance.check_result == CheckState.OK
     assert pve_instance.check_message == "Cluster: 0 tasks running"
+
+
+@patch.object(CheckPVE, "request")
+def test_check_task_queue_perfdata_is_count(
+    mock_request: MagicMock,
+    pve_instance: CheckPVE,
+) -> None:
+    """Task counters are dimensionless and carry no unit."""
+    mock_request.return_value = [{"type": "vzdump", "node": "pve", "starttime": 0}]
+    pve_instance.options.node = None
+    pve_instance.options.threshold_warning = {}
+    pve_instance.options.threshold_critical = {}
+
+    pve_instance.check_task_queue()
+
+    assert pve_instance.perfdata == ["running_tasks=1;;;0;", "failed_tasks=0;;;0;"]
