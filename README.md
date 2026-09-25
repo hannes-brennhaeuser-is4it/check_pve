@@ -111,7 +111,7 @@ usage: check_pve.py [-h] [--version] [-e API_ENDPOINT] [--api-port API_PORT] [-u
                     [-m {cluster,version,cpu,memory,swap,storage,io_wait,io-wait,updates,services,subscription,vm,vm_status,vm-status,replication,disk-health,ceph-health,zfs-health,zfs-fragmentation,backup,snapshot-age,network-status,task-queue,certificate}]
                     [-n NODE] [--name NAME] [--vmid VMID] [--expected-vm-status {running,stopped,paused}]
                     [--ignore-vmid VMID] [--ignore-vm-status] [--ignore-service NAME] [--ignore-disk DISK]
-                    [--ignore-pools NAME] [--ignore-interface NAME] [--ignore-no-backup]
+                    [--ignore-pools NAME] [--ignore-no-backup] [--ignore-interface NAME] [--detail]
                     [-w THRESHOLD_WARNING] [-c THRESHOLD_CRITICAL] [-M] [-V MIN_VERSION]
                     [--unit {GB,MB,KB,GiB,MiB,KiB,B}]
 
@@ -126,8 +126,8 @@ API Options:
                         PVE api endpoint hostname or IP address (no additional data like paths)
   --api-port API_PORT   PVE api endpoint port
   -u, --username API_USER
-                        PVE api user (e.g. icinga2@pve or icinga2@pam, depending on which backend you have chosen
-                        in proxmox)
+                        PVE api user (e.g. icinga2@pve or icinga2@pam, depending on which backend you have chosen in
+                        proxmox)
   -p, --password API_PASSWORD
                         PVE API user password
   -P, --password-file API_PASSWORD_FILE
@@ -150,11 +150,13 @@ Check Options:
   --ignore-vm-status    Ignore VM status in checks
   --ignore-service NAME
                         Ignore service NAME in checks
-  --ignore-disk DISK    Ignore disk DISK in health check. Accepts either the device name (e.g. 'sdb') or the
-                        disk's serial number; matching is case-insensitive. Can be given multiple times.
+  --ignore-disk DISK    Ignore disk DISK in health check. Accepts either the device name (e.g. 'sdb') or the disk's
+                        serial number; matching is case-insensitive. Can be given multiple times.
   --ignore-pools NAME   Ignore VMs and containers in pool(s) NAME in checks
+  --ignore-no-backup    Ignore not backed up VMs in backup check
   --ignore-interface NAME
                         Ignore network interface NAME in network status check
+  --detail              Also list items in OK state in the detail lines below the summary
   -w, --warning THRESHOLD_WARNING
                         Warning threshold for check value. Multiple thresholds with name:value,name:value
   -c, --critical THRESHOLD_CRITICAL
@@ -167,52 +169,56 @@ Check Options:
                         Unit which is used for performance data and other values
 ```
 
+## Output format
+
+Checks covering several items list the affected items below the summary line. Add `--detail` to also list items in OK state (Icinga 2: `vars.pve_detail = true`).
+
 ## Check examples
 
 
 **Check cluster health**
 ```
 ./check_pve.py -u <API_USER> -t <API_TOKEN> -e <API_ENDPOINT> -m cluster
-OK - Cluster 'proxmox1' is healthy'
+PVE OK: Cluster 'proxmox1' is healthy, all 3 nodes online|nodes_total=3;;;0; nodes_online=3;;;0;
 ```
 
 **Check PVE version**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m version -V 5.0.0
-OK - Your pve instance version '5.2' (0fcd7879) is up to date
+PVE OK: Your pve instance version '5.2' (0fcd7879) is up to date
 ```
 
 **Check CPU load**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m cpu -n node1
-OK - CPU usage is 2.4%|usage=2.4%;;
+PVE OK: CPU usage is 2.4%|usage=2.4%;;
 ```
 
 **Check memory usage**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m memory -n node1
-OK - Memory usage is 37.44%|usage=37.44%;; used=96544.72MB;;;257867.91
+PVE OK: Memory usage is 37.44%|usage=37.44%;; used=96544.72MB;;;257867.91
 ```
 
 **Check disk-health**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m disk-health -n node1
-OK - All disks are healthy|wearout_sdb=96%;; wearout_sdc=96%;; wearout_sdd=96%;; wearout_sde=96%;;
+PVE OK: All 4 disks are healthy|wearout_sdb=96%;; wearout_sdc=96%;; wearout_sdd=96%;; wearout_sde=96%;;
 ```
 
 **Check storage usage**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m storage -n node1 --name local
-OK - Storage usage is 54.23%|usage=54.23%;; used=128513.11MB;;;236980.36
+PVE OK: Storage usage is 54.23%|usage=54.23%;; used=128513.11MB;;;236980.36
 
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m storage -n node1 --name vms-disx
-CRITICAL - Storage 'vms-disx' doesn't exist on node 'node01'
+PVE CRITICAL: Storage 'vms-disx' doesn't exist on node 'node01'
 ```
 
 **Check subscription status**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m subscription -n node1 -w 50 -c 10
-OK - Subscription of level 'Community' is valid until 2019-01-09
+PVE OK: Subscription of level 'Community' is valid until 2019-01-09
 ```
 
 **Check VM status**
@@ -220,40 +226,40 @@ OK - Subscription of level 'Community' is valid until 2019-01-09
 Without specifying a node name:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m vm --name test-vm
-OK - VM 'test-vm' is running on 'node1'|cpu=1.85%;; memory=8.33%;;
+PVE OK: VM 'test-vm' is running on 'node1'|cpu=1.85%;; memory=8.33%;;
 ```
 
 You can also pass a container name for the VM check:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m vm --name test-lxc
-OK - LXC 'test-lxc' on node 'node1' is running|cpu=0.11%;; memory=13.99%;;
+PVE OK: LXC 'test-lxc' on node 'node1' is running|cpu=0.11%;; memory=13.99%;;
 ```
 
 With memory thresholds:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m vm --name test-vm -w 50 -c 80
-OK - VM 'test-vm' is running on 'node1'|cpu=1.85%;; memory=40.33%;50.0;80.0
+PVE OK: VM 'test-vm' is running on 'node1'|cpu=1.85%;; memory=40.33%;50.0;80.0
 ```
 
 With a specified node name, the check plugin verifies on which node the VM runs:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m vm -n node1 --name test-vm
-OK - VM 'test-vm' is running on node 'node1'|cpu=1.85%;; memory=8.33%;;
+PVE OK: VM 'test-vm' is running on node 'node1'|cpu=1.85%;; memory=8.33%;;
 
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m vm -n node1 --name test-vm
-WARNING - VM 'test-vm' is running on node 'node2' instead of 'node1'|cpu=1.85%;; memory=8.33%;;
+PVE WARNING: VM 'test-vm' is running on node 'node2' instead of 'node1'|cpu=1.85%;; memory=8.33%;;
 ```
 
 If you only want to gather metrics and don't care about the VM status, add the `--ignore-vm-status` flag:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m vm --name test-vm --ignore-vm-status
-OK - VM 'test-vm' is not running
+PVE OK: VM 'test-vm' is not running
 ```
 
 Specify the expected VM status:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m vm --name test-vm --expected-vm-status stopped
-OK - VM 'test-vm' is not running
+PVE OK: VM 'test-vm' is not running
 
 ```
 
@@ -262,48 +268,45 @@ For host-alive checks without gathering performance data, use `vm_status` instea
 **Check swap usage**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m swap -n pve
-OK - Swap usage is 0.0 %|usage=0.0%;; used=0.0MB;;;8192.0
+PVE OK: Swap usage is 0.0 %|usage=0.0%;; used=0.0MB;;;8192.0
 ```
 
 **Check storage replication status**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m replication -n node1
-OK - No failed replication jobs on node1
+PVE OK: All 2 replication jobs on node 'node1' are OK|duration_100-0=2.5s;;;0; duration_101-0=3.1s;;;0;
 ```
 
 **Check Ceph cluster health**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m ceph-health
-WARNING - Ceph Cluster is in warning state
+PVE WARNING: Ceph Cluster is in warning state
 ```
 
 **Check ZFS pool health**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m zfs-health -n pve
-OK - All ZFS pools are healthy
+PVE OK: All 2 ZFS pools are healthy
 ```
 
 Check for specific pool:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m zfs-health -n pve --name rpool
-OK - ZFS pool 'rpool' is healthy
+PVE OK: ZFS pool 'rpool' is healthy
 ```
 
 **Check ZFS pool fragmentation**
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m zfs-fragmentation -n pve -w 40 -c 60
-CRITICAL - 2 of 2 ZFS pools are above fragmentation thresholds:
-
-- rpool (71 %) is CRITICAL
-- diskpool (50 %) is WARNING
-|fragmentation_diskpool=50%;40.0;60.0 fragmentation_rpool=71%;40.0;60.0
-
+PVE CRITICAL: 2 of 2 ZFS pools are above fragmentation thresholds
+diskpool: 50 % [WARNING]
+rpool: 71 % [CRITICAL]|fragmentation_diskpool=50%;40.0;60.0;0; fragmentation_rpool=71%;40.0;60.0;0;
 ```
 
 Check for specific pool:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m zfs-fragmentation -n pve --name diskpool -w 40 -c 60
-WARNING - Fragmentation of ZFS pool 'diskpool' is above thresholds: 50 %|fragmentation=50%;40.0;60.0
+PVE WARNING: Fragmentation of ZFS pool 'diskpool' is above thresholds: 50 %|fragmentation=50%;40.0;60.0
 ```
 
 **Check VZDump Backups**
@@ -312,14 +315,17 @@ Check task history on all nodes:
 
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m backup
-CRITICAL - 8 backup tasks successful, 3 backup tasks failed
+PVE CRITICAL: 8 of 11 backup tasks successful, 3 failed
+vzdump 101 on node 'pve' started 2026-09-24 01:00:00: job errors [CRITICAL]
+vzdump 102 on node 'pve' started 2026-09-24 01:05:00: job errors [CRITICAL]
+vzdump 103 on node 'pve' started 2026-09-24 01:10:00: job errors [CRITICAL]
 ```
 
 Check for specific node and time frame:
 
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m backup -n pve -c 86400
-OK - 2 backup tasks successful, 0 backup tasks failed within the last 86400.0s
+PVE OK: 2 of 2 backup tasks successful within the last 86400.0s
 ```
 
 Ignore a VM by its ID in the backup check:
@@ -359,25 +365,25 @@ You can also filter by VM/Container ID:
 Check all network interfaces on a node:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m network-status -n node1
-OK - All network interfaces on node 'node1' are healthy
+PVE OK: All 6 network interfaces on node 'node1' are healthy
 ```
 
 Check specific interface (e.g., bond):
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m network-status -n node1 --name bond0
-OK - Network interface 'bond0' is healthy
+PVE OK: Network interface 'bond0' is healthy
 ```
 
 Degraded bond example (one member down):
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m network-status -n node1 --name bond0
-WARNING - Bond 'bond0' degraded: 1/2 members active (mode: 802.3ad)
+PVE WARNING: Bond 'bond0' degraded: 1/2 members active (mode: 802.3ad)
 ```
 
 Ignore specific interfaces:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m network-status -n node1 --ignore-interface vmbr1
-OK - All network interfaces on node 'node1' are healthy
+PVE OK: All 6 network interfaces on node 'node1' are healthy
 ```
 
 **Check task queue**
@@ -385,19 +391,19 @@ OK - All network interfaces on node 'node1' are healthy
 Check cluster-wide task queue:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m task-queue
-OK - Cluster: 2 tasks running (1 backup, 1 qmigrate)|running_tasks=2;; failed_tasks=0;;
+PVE OK: Cluster: 2 tasks running (1 backup, 1 qmigrate)|running_tasks=2;; failed_tasks=0;;
 ```
 
 Check task queue for specific node:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m task-queue -n node1
-OK - Node 'node1': 1 tasks running (1 backup)|running_tasks=1;; failed_tasks=0;;
+PVE OK: Node 'node1': 1 tasks running (1 backup)|running_tasks=1;; failed_tasks=0;;
 ```
 
 With thresholds for running tasks:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m task-queue -w running:5 -c running:10
-WARNING - Cluster: 6 tasks running (3 backup, 2 qmigrate, 1 qmrestore)|running_tasks=6;5.0;10.0 failed_tasks=0;;
+PVE WARNING: Cluster: 6 tasks running (3 backup, 2 qmigrate, 1 qmrestore)|running_tasks=6;5.0;10.0 failed_tasks=0;;
 ```
 
 **Check SSL certificates**
@@ -405,19 +411,20 @@ WARNING - Cluster: 6 tasks running (3 backup, 2 qmigrate, 1 qmrestore)|running_t
 Check all cluster node certificates (checks pveproxy-ssl.pem if present, otherwise pve-ssl.pem):
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m certificate
-OK - All certificates on 3 node(s) are valid|days_left=180;30.0;7.0
+PVE OK: All 3 certificate(s) on 3 node(s) are valid|days_left=180;30.0;7.0
 ```
 
 Check specific node certificate:
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m certificate -n node1
-OK - Certificate on node 'node1' is valid|days_left=180;30.0;7.0
+PVE OK: Certificate on node 'node1' is valid|days_left=180;30.0;7.0
 ```
 
 With custom thresholds (default: warning=30 days, critical=7 days):
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m certificate -w 60 -c 14
-WARNING - 1 certificate(s) expiring soon: node1/pveproxy-ssl.pem expires in 45 days|days_left=45;60.0;14.0
+PVE WARNING: 1 of 3 certificate(s) expiring soon
+node1/pveproxy-ssl.pem expires in 45 days on 2026-11-09 [WARNING]|days_left=45;60.0;14.0
 ```
 
 ## FAQ
@@ -428,7 +435,7 @@ You can either specify a threshold for warning or critical which is applied to a
 
 ```
 ./check_pve.py -u <API_USER> -p <API_PASSWORD> -e <API_ENDPOINT> -m vm --name test-vm -w memory:50 -c cpu:50,memory:80
-OK - VM 'test-vm' is running on 'node1'|cpu=1.85%;50.0; memory=40.33%;50.0;80.0
+PVE OK: VM 'test-vm' is running on 'node1'|cpu=1.85%;50.0; memory=40.33%;50.0;80.0
 ```
 
 ### Could not connect to PVE API: Failed to resolve hostname
