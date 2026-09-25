@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.3.4
+# Version: 1.6.0+is4it.1.3.5
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -151,7 +151,7 @@ class CheckPVE:
     """Check command for Proxmox VE."""
 
     SHORTNAME = "PVE"
-    VERSION = "1.6.0+is4it.1.3.4"
+    VERSION = "1.6.0+is4it.1.3.5"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -269,7 +269,7 @@ class CheckPVE:
 
         message = "Could not fetch data from API: "
         if response.status_code == 401:
-            message += "Could not connection to PVE API: invalid username or password"
+            message += "Invalid username or password"
         elif response.status_code == 403:
             message += (
                 "Access denied. Please check if API user has sufficient permissions / "

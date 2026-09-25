@@ -94,3 +94,17 @@ def test_other_request_exception_is_reported_as_unknown(pve_instance):
     pve_instance.output.assert_called_with(
         CheckState.UNKNOWN, "Could not fetch data from API: TooManyRedirects"
     )
+
+
+def test_unauthorized_is_reported_as_invalid_credentials(pve_instance):
+    pve_instance.options.api_endpoint = "mock-endpoint"
+    pve_instance.options.api_port = 8006
+    response = requests.Response()
+    response.status_code = 401
+
+    with patch("check_pve.requests.get", return_value=response):
+        pve_instance.request("https://mock-endpoint")
+
+    pve_instance.output.assert_called_with(
+        CheckState.UNKNOWN, "Could not fetch data from API: Invalid username or password"
+    )
