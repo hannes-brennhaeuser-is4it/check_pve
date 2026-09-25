@@ -19,5 +19,6 @@ def pve_instance() -> CheckPVE:
         instance._CheckPVE__headers = {}
         instance._CheckPVE__cookies = {}
         instance.options.api_insecure = False
+        instance.options.detail = False
 
         return instance

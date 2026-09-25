@@ -75,3 +75,16 @@ def test_replication_summary(pve_instance: CheckPVE) -> None:
         "\nGuest 101 (job 101-0): 3 failures, error: timeout [WARNING]"
     )
     assert pve_instance.perfdata == ["duration_100-0=2.5s;;;0;"]
+
+
+def test_detail_option_lists_ok_items(pve_instance: CheckPVE) -> None:
+    pve_instance.options = pve_instance.parse_args(
+        ["-e", "endpoint", "-u", "user", "-p", "password", "-m", "zfs-health", "-n", "pve"]
+        + ["--detail"]
+    )
+    pools = [{"name": "rpool", "health": "ONLINE"}, {"name": "tank", "health": "DEGRADED"}]
+
+    with patch.object(CheckPVE, "request", return_value=pools):
+        pve_instance.check_zfs_health()
+
+    assert pve_instance.get_details() == "\nrpool: ONLINE [OK]\ntank: DEGRADED [CRITICAL]"

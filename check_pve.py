@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.2.0
+# Version: 1.6.0+is4it.1.3.0
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -151,7 +151,7 @@ class CheckPVE:
     """Check command for Proxmox VE."""
 
     SHORTNAME = "PVE"
-    VERSION = "1.6.0+is4it.1.2.0"
+    VERSION = "1.6.0+is4it.1.3.0"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -176,11 +176,11 @@ class CheckPVE:
         self.details.append((state, text))
 
     def get_details(self) -> str:
-        """Get long output lines for all non-OK details, one per line."""
+        """Get long output lines, one per line; OK lines only with --detail."""
         lines = [
             f"{text} [{state.name}]" if state else text
             for state, text in self.details
-            if state is not CheckState.OK
+            if state is not CheckState.OK or self.options.detail
         ]
         return "".join(f"\n{line}" for line in lines)
 
@@ -1665,6 +1665,14 @@ class CheckPVE:
             metavar="NAME",
             help="Ignore network interface NAME in network status check",
             default=[],
+        )
+
+        check_opts.add_argument(
+            "--detail",
+            dest="detail",
+            action="store_true",
+            default=False,
+            help="Also list items in OK state in the detail lines below the summary",
         )
 
         check_opts.add_argument(
