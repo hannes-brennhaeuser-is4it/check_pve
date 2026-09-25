@@ -108,7 +108,7 @@ The `icinga2` folder contains the command definition and service examples for us
 ```
 usage: check_pve.py [-h] [--version] [-e API_ENDPOINT] [--api-port API_PORT] [-u API_USER] [-p API_PASSWORD |
                     -P API_PASSWORD_FILE | -t API_TOKEN | -T API_TOKEN_FILE] [-k]
-                    [-m {cluster,version,cpu,memory,swap,storage,io_wait,io-wait,updates,services,subscription,vm,vm_status,vm-status,replication,disk-health,ceph-health,zfs-health,zfs-fragmentation,backup,snapshot-age,network-status,task-queue,certificate}]
+                    [-m {api-connection,cluster,version,cpu,memory,swap,storage,io_wait,io-wait,updates,services,subscription,vm,vm_status,vm-status,replication,disk-health,ceph-health,zfs-health,zfs-fragmentation,backup,snapshot-age,network-status,task-queue,certificate}]
                     [-n NODE] [--name NAME] [--vmid VMID] [--expected-vm-status {running,stopped,paused}]
                     [--ignore-vmid VMID] [--ignore-vm-status] [--ignore-service NAME] [--ignore-disk DISK]
                     [--ignore-pools NAME] [--ignore-no-backup] [--ignore-interface NAME] [--detail]
@@ -139,7 +139,7 @@ API Options:
   -k, --insecure        Don't verify HTTPS certificate
 
 Check Options:
-  -m, --mode {cluster,version,cpu,memory,swap,storage,io_wait,io-wait,updates,services,subscription,vm,vm_status,vm-status,replication,disk-health,ceph-health,zfs-health,zfs-fragmentation,backup,snapshot-age,network-status,task-queue,certificate}
+  -m, --mode {api-connection,cluster,version,cpu,memory,swap,storage,io_wait,io-wait,updates,services,subscription,vm,vm_status,vm-status,replication,disk-health,ceph-health,zfs-health,zfs-fragmentation,backup,snapshot-age,network-status,task-queue,certificate}
                         Mode to use.
   -n, --node NODE       Node to check (necessary for all modes except cluster, version and backup)
   --name NAME           Name of storage, vm, or container
@@ -174,6 +174,17 @@ Check Options:
 Checks covering several items list the affected items below the summary line. Add `--detail` to also list items in OK state (Icinga 2: `vars.pve_detail = true`).
 
 ## Check examples
+
+**Check API connection**
+
+Checks that the PVE API is reachable and accepts the credentials. Connection and login failures return CRITICAL, so the service can serve as parent of an Icinga 2 dependency. `icinga2/service.conf` contains an example that suppresses notifications of all other PVE checks while the API is not reachable.
+```
+./check_pve.py -u <API_USER> -t <API_TOKEN> -e <API_ENDPOINT> -m api-connection
+PVE OK: Login to PVE API as 'monitoring@pve' succeeded
+
+./check_pve.py -u <API_USER> -p <WRONG_PASSWORD> -e <API_ENDPOINT> -m api-connection
+PVE CRITICAL: Could not fetch data from API: Invalid username or password
+```
 
 
 **Check cluster health**
