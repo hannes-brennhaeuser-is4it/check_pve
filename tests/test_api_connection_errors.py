@@ -1,3 +1,4 @@
+import pytest
 import requests
 from unittest.mock import patch
 
@@ -108,3 +109,14 @@ def test_unauthorized_is_reported_as_invalid_credentials(pve_instance):
     pve_instance.output.assert_called_with(
         CheckState.UNKNOWN, "Could not fetch data from API: Invalid username or password"
     )
+
+
+def test_unsupported_request_method_is_unknown(pve_instance):
+    pve_instance.options.api_endpoint = "mock-endpoint"
+    pve_instance.options.api_port = 8006
+    pve_instance.output.side_effect = SystemExit
+
+    with pytest.raises(SystemExit):
+        pve_instance.request("https://mock-endpoint", method="put")
+
+    pve_instance.output.assert_called_with(CheckState.UNKNOWN, "Unsupported request method: put")

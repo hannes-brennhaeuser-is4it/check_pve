@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.3.5
+# Version: 1.6.0+is4it.1.3.6
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -151,7 +151,7 @@ class CheckPVE:
     """Check command for Proxmox VE."""
 
     SHORTNAME = "PVE"
-    VERSION = "1.6.0+is4it.1.3.5"
+    VERSION = "1.6.0+is4it.1.3.6"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -225,7 +225,7 @@ class CheckPVE:
                     timeout=CHECK_API_TIMEOUT,
                 )
             else:
-                self.output(CheckState.CRITICAL, f"Unsupport request method: {method}")
+                self.output(CheckState.UNKNOWN, f"Unsupported request method: {method}")
         except requests.exceptions.ConnectTimeout:
             self.output(CheckState.UNKNOWN, "Could not connect to PVE API: Connection timeout")
             return None
