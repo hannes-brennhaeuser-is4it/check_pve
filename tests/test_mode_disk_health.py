@@ -45,11 +45,13 @@ def test_ignore_disks(
 
     if excluded:
         assert disk_check.check_result == CheckState.OK
-        assert disk_check.check_message == "All disks are healthy"
+        assert disk_check.check_message == "All 0 disks are healthy"
         assert disk_check.perfdata == []
     else:
         assert disk_check.check_result == CheckState.WARNING
-        assert "/dev/sdb with serial 'AbC123'" in disk_check.check_message
+        assert (
+            "/dev/sdb with serial 'AbC123'" in disk_check.check_message + disk_check.get_details()
+        )
         assert disk_check.perfdata == ["wearout_sdb=90%;;;0;"]
 
 
@@ -71,7 +73,7 @@ def test_missing_serial(disk_check: CheckPVE, serial_fields: Dict, health: str) 
         disk_check.check_disks()
 
     assert disk_check.check_result == CheckState.WARNING
-    assert "/dev/sdb with serial ''" in disk_check.check_message
+    assert "/dev/sdb with serial ''" in disk_check.check_message + disk_check.get_details()
     assert disk_check.perfdata == []
 
 
@@ -87,7 +89,6 @@ def test_exclusion_keeps_other_disks_checked(disk_check: CheckPVE) -> None:
         disk_check.check_disks()
 
     assert disk_check.check_result == CheckState.WARNING
-    assert disk_check.check_message == (
-        "1 of 2 disks failed the health test:\n- /dev/sdb with serial 'OTHER'\n"
-    )
+    assert disk_check.check_message == "1 of 1 disks failed the health test"
+    assert disk_check.get_details() == ("\n/dev/sdb with serial 'OTHER': health FAILED [WARNING]")
     assert disk_check.perfdata == ["wearout_sdb=80%;;;0;"]

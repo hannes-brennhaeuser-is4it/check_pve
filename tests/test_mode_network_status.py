@@ -45,7 +45,7 @@ def test_arguments(pve_instance: CheckPVE) -> None:
             ],
             None,
             CheckState.OK,
-            "All network interfaces on node 'test-node' are healthy",
+            "network interfaces on node 'test-node' are healthy",
         ),
         (
             # Bond degraded - one member down
@@ -163,7 +163,7 @@ def test_check_network_status(
     pve_instance.options.name = interface_name
     pve_instance.check_network_status(interface_name)
 
-    assert expected_message in pve_instance.check_message
+    assert expected_message in pve_instance.check_message + pve_instance.get_details()
     assert pve_instance.check_result == expected_state
 
 
@@ -193,7 +193,10 @@ def test_check_network_status_with_ignore(
     pve_instance.check_network_status(None)
 
     # With both bond0 (degraded) and vmbr0 (down) ignored, all should be healthy
-    assert "All network interfaces on node 'test-node' are healthy" in pve_instance.check_message
+    assert (
+        "network interfaces on node 'test-node' are healthy"
+        in pve_instance.check_message + pve_instance.get_details()
+    )
     assert pve_instance.check_result == CheckState.OK
 
 
@@ -223,7 +226,7 @@ def test_check_network_status_bond_with_primary(
     pve_instance.options.ignore_interfaces = []
     pve_instance.check_network_status(None)
 
-    assert "primary: ens1 (inactive)" in pve_instance.check_message
+    assert "primary: ens1 (inactive)" in pve_instance.check_message + pve_instance.get_details()
     assert pve_instance.check_result == CheckState.WARNING
 
 
@@ -253,5 +256,5 @@ def test_check_network_status_bond_primary_active(
     pve_instance.options.ignore_interfaces = []
     pve_instance.check_network_status(None)
 
-    assert "primary: ens1 (active)" in pve_instance.check_message
+    assert "primary: ens1 (active)" in pve_instance.check_message + pve_instance.get_details()
     assert pve_instance.check_result == CheckState.WARNING

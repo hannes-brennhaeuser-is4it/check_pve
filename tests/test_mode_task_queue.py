@@ -52,7 +52,7 @@ def test_arguments(pve_instance: CheckPVE) -> None:
             ],
             None,
             CheckState.WARNING,
-            "1 tasks failed",
+            "1 of 2 tasks failed",
         ),
         (
             # Running tasks on specific node
@@ -97,7 +97,7 @@ def test_check_task_queue(
     pve_instance.options.threshold_critical = {}
     pve_instance.check_task_queue()
 
-    assert expected_message_part in pve_instance.check_message
+    assert expected_message_part in pve_instance.check_message + pve_instance.get_details()
     assert pve_instance.check_result == expected_state
 
 
@@ -125,7 +125,7 @@ def test_check_task_queue_with_thresholds(
     pve_instance.check_task_queue()
 
     assert pve_instance.check_result == CheckState.WARNING
-    assert "6 tasks running" in pve_instance.check_message
+    assert "6 tasks running" in pve_instance.check_message + pve_instance.get_details()
 
     # Test critical threshold
     pve_instance.options.threshold_warning = {}
@@ -133,7 +133,7 @@ def test_check_task_queue_with_thresholds(
     pve_instance.check_task_queue()
 
     assert pve_instance.check_result == CheckState.CRITICAL
-    assert "6 tasks running" in pve_instance.check_message
+    assert "6 tasks running" in pve_instance.check_message + pve_instance.get_details()
 
 
 @patch.object(CheckPVE, "request")
@@ -147,5 +147,8 @@ def test_check_task_queue_empty_response(
     pve_instance.options.node = None
     pve_instance.check_task_queue()
 
-    assert "Could not fetch task queue data from API" in pve_instance.check_message
+    assert (
+        "Could not fetch task queue data from API"
+        in pve_instance.check_message + pve_instance.get_details()
+    )
     assert pve_instance.check_result == CheckState.UNKNOWN

@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.1.0
+# Version: 1.6.0+is4it.1.2.0
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -151,7 +151,7 @@ class CheckPVE:
     """Check command for Proxmox VE."""
 
     SHORTNAME = "PVE"
-    VERSION = "1.6.0+is4it.1.1.0"
+    VERSION = "1.6.0+is4it.1.2.0"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -165,11 +165,24 @@ class CheckPVE:
 
     def check_output(self) -> None:
         """Print check command output with perfdata and return code."""
-        message = self.check_message
+        message = self.check_message + self.get_details()
         if self.perfdata:
             message += self.get_perfdata()
 
         self.output(self.check_result, message)
+
+    def add_detail(self, text: str, state: Optional[CheckState] = None) -> None:
+        """Add a long output line; lines without state are always shown."""
+        self.details.append((state, text))
+
+    def get_details(self) -> str:
+        """Get long output lines for all non-OK details, one per line."""
+        lines = [
+            f"{text} [{state.name}]" if state else text
+            for state, text in self.details
+            if state is not CheckState.OK
+        ]
+        return "".join(f"\n{line}" for line in lines)
 
     @staticmethod
     def output(rc: CheckState, message: str) -> None:
@@ -390,8 +403,9 @@ class CheckPVE:
 
         ignore_disks = {entry.strip().lower() for entry in self.options.ignore_disks}
 
-        failed = []
-        unknown = []
+        checked = 0
+        failed = 0
+        unknown = 0
         disks = self.request(url + "/list")
         for disk in disks:
             name = disk["devpath"].replace("/dev/", "")
@@ -400,31 +414,30 @@ class CheckPVE:
             if name.lower() in ignore_disks or (serial and serial.lower() in ignore_disks):
                 continue
 
+            checked += 1
+            detail = f"{disk['devpath']} with serial '{serial}': health {disk['health']}"
             if disk["health"] == "UNKNOWN":
-                self.check_result = CheckState.WARNING
-                unknown.append({"serial": serial, "device": disk["devpath"]})
-
+                unknown += 1
+                self.add_detail(detail, CheckState.WARNING)
             elif disk["health"] not in ("PASSED", "OK"):
-                self.check_result = CheckState.WARNING
-                failed.append({"serial": serial, "device": disk["devpath"]})
+                failed += 1
+                self.add_detail(detail, CheckState.WARNING)
+            else:
+                self.add_detail(detail, CheckState.OK)
 
             if disk["wearout"] != "N/A":
                 self.add_perfdata(f"wearout_{name}", disk["wearout"])
 
-        if failed:
-            self.check_message = f"{len(failed)} of {len(disks)} disks failed the health test:\n"
-            for disk in failed:
-                self.check_message += f"- {disk['device']} with serial '{disk['serial']}'\n"
-
-        if unknown:
-            self.check_message += (
-                f"{len(unknown)} of {len(disks)} disks have unknown health status:\n"
-            )
-            for disk in unknown:
-                self.check_message += f"- {disk['device']} with serial '{disk['serial']}'\n"
-
-        if not failed and not unknown:
-            self.check_message = "All disks are healthy"
+        if failed or unknown:
+            self.check_result = CheckState.WARNING
+            problems = []
+            if failed:
+                problems.append(f"{failed} of {checked} disks failed the health test")
+            if unknown:
+                problems.append(f"{unknown} of {checked} disks have unknown health status")
+            self.check_message = ", ".join(problems)
+        else:
+            self.check_message = f"All {checked} disks are healthy"
 
     def check_replication(self) -> None:
         """Check replication status for either all or one specific vm / container."""
@@ -435,58 +448,58 @@ class CheckPVE:
         else:
             data = self.request(url)
 
-        failed_jobs = []  # format: [{guest: str, fail_count: int, error: str}]
-        performance_data = []
-
+        failed = 0
         for job in data:
+            detail = f"Guest {job['guest']} (job {job['id']})"
             if job["fail_count"] > 0:
-                failed_jobs.append(
-                    {"guest": job["guest"], "fail_count": job["fail_count"], "error": job["error"]}
+                failed += 1
+                self.add_detail(
+                    f"{detail}: {job['fail_count']} failures, error: {job['error']}",
+                    CheckState.WARNING,
                 )
             else:
-                performance_data.append({"id": job["id"], "duration": job["duration"]})
+                self.add_detail(f"{detail}: last run took {job['duration']}s", CheckState.OK)
+                self.add_perfdata("duration_" + job["id"], job["duration"], unit="s")
 
-        if len(failed_jobs) > 0:
-            message = f"Failed replication jobs on {self.options.node}: "
-            for job in failed_jobs:
-                message = (
-                    message
-                    + "GUEST: {j[guest]}, FAIL_COUNT: {j[fail_count]}, ERROR: {j[error]} ; ".format(
-                        j=job
-                    )
-                )
-            self.check_message = message
+        if failed:
             self.check_result = CheckState.WARNING
-        else:
-            self.check_message = f"No failed replication jobs on {self.options.node}"
+            self.check_message = (
+                f"{failed} of {len(data)} replication jobs failed on node '{self.options.node}'"
+            )
+        elif data:
             self.check_result = CheckState.OK
-
-        if len(performance_data) > 0:
-            for metric in performance_data:
-                self.add_perfdata("duration_" + metric["id"], metric["duration"], unit="s")
+            self.check_message = (
+                f"All {len(data)} replication jobs on node '{self.options.node}' are OK"
+            )
+        else:
+            self.check_result = CheckState.OK
+            self.check_message = f"No replication jobs on node '{self.options.node}'"
 
     def check_services(self) -> None:
         """Check state of core services on Proxmox VE node."""
         url = self.get_url(f"nodes/{self.options.node}/services")
         data = self.request(url)
 
-        failed = {}
+        checked = 0
+        failed = 0
         for service in data:
-            if (
-                service["state"] != "running"
-                and service.get("active-state", "active") == "active"
-                and service["name"] not in self.options.ignore_services
-            ):
-                failed[service["name"]] = service["desc"]
+            if service["name"] in self.options.ignore_services:
+                continue
+
+            detail = f"{service['desc']} ({service['name']})"
+            if service["state"] == "running":
+                checked += 1
+                self.add_detail(f"{detail} is running", CheckState.OK)
+            elif service.get("active-state", "active") == "active":
+                checked += 1
+                failed += 1
+                self.add_detail(f"{detail} is not running", CheckState.CRITICAL)
 
         if failed:
             self.check_result = CheckState.CRITICAL
-            message = f"{len(failed)} services are not running:\n\n"
-            for name, description in failed.items():
-                message += f"- {description} ({name}) is not running\n"
-            self.check_message = message
+            self.check_message = f"{failed} of {checked} services are not running"
         else:
-            self.check_message = "All services are running"
+            self.check_message = f"All {checked} services are running"
 
     def check_subscription(self) -> None:
         """Check subscription status on Proxmox VE node."""
@@ -563,6 +576,12 @@ class CheckPVE:
             elif elem["type"] == "node":
                 nodes[elem["name"]] = elem["online"]
 
+        for node, online in nodes.items():
+            if online:
+                self.add_detail(f"Node '{node}' is online", CheckState.OK)
+            else:
+                self.add_detail(f"Node '{node}' is offline", CheckState.WARNING)
+
         if quorate is None:
             self.check_message = "No cluster configuration found"
         elif quorate:
@@ -572,11 +591,14 @@ class CheckPVE:
             if node_count > nodes_online_count:
                 diff = node_count - nodes_online_count
                 self.check_result = CheckState.WARNING
-                self.check_message = f"Cluster '{cluster}' is healthy, but {diff} node(s) offline'"
+                self.check_message = (
+                    f"Cluster '{cluster}' is healthy, but {diff} of {node_count} nodes offline"
+                )
             else:
-                # Healthy cluster
                 self.check_result = CheckState.OK
-                self.check_message = f"Cluster '{cluster}' is healthy'"
+                self.check_message = (
+                    f"Cluster '{cluster}' is healthy, all {node_count} nodes online"
+                )
 
             self.add_perfdata("nodes_total", node_count, unit="")
             self.add_perfdata("nodes_online", nodes_online_count, unit="")
@@ -604,14 +626,20 @@ class CheckPVE:
                 threshold_warning = self.threshold_warning(threshold_name)
                 threshold_critical = self.threshold_critical(threshold_name)
 
+                state = CheckState.OK
                 if threshold_critical is not None and pool["frag"] > float(
                     threshold_critical.value
                 ):
                     critical.append(pool)
+                    state = CheckState.CRITICAL
                 elif threshold_warning is not None and pool["frag"] > float(
                     threshold_warning.value
                 ):
                     warnings.append(pool)
+                    state = CheckState.WARNING
+
+                if name is None:
+                    self.add_detail(f"{pool['name']}: {pool['frag']} %", state)
 
         if not found:
             self.check_result = CheckState.UNKNOWN
@@ -634,23 +662,15 @@ class CheckPVE:
                     )
                 else:
                     pool_above = len(warnings) + len(critical)
-                    message = (
-                        f"{pool_above} of {len(data)} ZFS pools are above fragmentation "
-                        "thresholds:\n\n"
+                    self.check_message = (
+                        f"{pool_above} of {len(data)} ZFS pools are above fragmentation thresholds"
                     )
-                    message += "\n".join(
-                        [f"- {pool['name']} ({pool['frag']} %) is CRITICAL\n" for pool in critical]
-                    )
-                    message += "\n".join(
-                        [f"- {pool['name']} ({pool['frag']} %) is WARNING\n" for pool in warnings]
-                    )
-                    self.check_message = message
             else:
                 self.check_result = CheckState.OK
                 if name is not None:
                     self.check_message = f"Fragmentation of ZFS pool '{name}' is OK"
                 else:
-                    self.check_message = "Fragmentation of all ZFS pools is OK"
+                    self.check_message = f"Fragmentation of all {len(data)} ZFS pools is OK"
 
     def check_zfs_health(self, name: Optional[str] = None) -> None:
         """Check all or one specific ZFS pool for health."""
@@ -658,13 +678,19 @@ class CheckPVE:
         data = self.request(url)
 
         unhealthy = []
+        checked = 0
         found = name is None
         healthy_conditions = ["online"]
         for pool in data:
             found = found or name == pool["name"]
             if (name is not None and name == pool["name"]) or name is None:
+                checked += 1
+                state = CheckState.OK
                 if pool["health"].lower() not in healthy_conditions:
                     unhealthy.append(pool)
+                    state = CheckState.CRITICAL
+                if name is None:
+                    self.add_detail(f"{pool['name']}: {pool['health']}", state)
 
         if not found:
             self.check_result = CheckState.UNKNOWN
@@ -672,17 +698,18 @@ class CheckPVE:
         else:
             if unhealthy:
                 self.check_result = CheckState.CRITICAL
-                message = f"{len(unhealthy)} ZFS pools are not healthy:\n\n"
-                message += "\n".join(
-                    [f"- {pool['name']} ({pool['health']}) is not healthy" for pool in unhealthy]
-                )
-                self.check_message = message
+                if name is not None:
+                    self.check_message = (
+                        f"ZFS pool '{name}' is not healthy: {unhealthy[0]['health']}"
+                    )
+                else:
+                    self.check_message = f"{len(unhealthy)} of {checked} ZFS pools are not healthy"
             else:
                 self.check_result = CheckState.OK
                 if name is not None:
                     self.check_message = f"ZFS pool '{name}' is healthy"
                 else:
-                    self.check_message = "All ZFS pools are healthy"
+                    self.check_message = f"All {checked} ZFS pools are healthy"
 
     def check_ceph_health(self) -> None:
         """Check health of CEPH cluster."""
@@ -723,6 +750,8 @@ class CheckPVE:
 
         interfaces_down = []
         bonds_degraded = []
+        entries = []  # format: [(state, text)] for each checked interface
+        bond_count = 0
         found = name is None
 
         for iface in data:
@@ -746,6 +775,7 @@ class CheckPVE:
 
             # Check bond status
             if iface_type == "bond":
+                bond_count += 1
                 bond_mode = iface.get("bond_mode", "")
                 slaves = iface.get("slaves", "").split() if iface.get("slaves") else []
                 bond_primary = iface.get("bond-primary", "")
@@ -757,33 +787,35 @@ class CheckPVE:
                     if slave_data and slave_data.get("active", 0):
                         active_slaves.append(slave)
 
-                # Bond is degraded if not all slaves are active
-                if len(active_slaves) < len(slaves) and len(slaves) > 0:
-                    bonds_degraded.append(
-                        {
-                            "name": iface_name,
-                            "mode": bond_mode,
-                            "expected": len(slaves),
-                            "active": len(active_slaves),
-                            "slaves": slaves,
-                            "active_slaves": active_slaves,
-                            "primary": bond_primary,
-                        }
-                    )
+                bond_detail = (
+                    f"{len(active_slaves)}/{len(slaves)} members active (mode: {bond_mode})"
+                )
+                # Add primary member info for active-backup mode
+                if bond_primary:
+                    primary_active = bond_primary in active_slaves
+                    primary_status = "active" if primary_active else "inactive"
+                    bond_detail += f", primary: {bond_primary} ({primary_status})"
 
-                # Bond is down if no slaves are active
                 if not active_slaves and slaves:
-                    interfaces_down.append(
-                        {"name": iface_name, "type": iface_type, "reason": "No active bond members"}
+                    interfaces_down.append(iface_name)
+                    entries.append(
+                        (CheckState.CRITICAL, f"Interface '{iface_name}' is down: {bond_detail}")
                     )
+                elif len(active_slaves) < len(slaves):
+                    bonds_degraded.append(iface_name)
+                    entries.append(
+                        (CheckState.WARNING, f"Bond '{iface_name}' degraded: {bond_detail}")
+                    )
+                else:
+                    entries.append((CheckState.OK, f"Bond '{iface_name}' is up: {bond_detail}"))
 
-            # Check if bridge/vlan/regular interface is down
-            elif iface_type in ("bridge", "vlan", "eth", "unknown") and not is_active:
-                # Only alert on bridge-ports and non-slave interfaces
-                if not iface.get("slave", 0):
-                    interfaces_down.append(
-                        {"name": iface_name, "type": iface_type, "reason": "Interface is down"}
-                    )
+            # Only alert on bridge-ports and non-slave interfaces
+            elif iface_type in ("bridge", "vlan", "eth", "unknown") and not iface.get("slave", 0):
+                if is_active:
+                    entries.append((CheckState.OK, f"Interface '{iface_name}' is up"))
+                else:
+                    interfaces_down.append(iface_name)
+                    entries.append((CheckState.CRITICAL, f"Interface '{iface_name}' is down"))
 
         if name and not found:
             self.check_result = CheckState.UNKNOWN
@@ -792,39 +824,34 @@ class CheckPVE:
             )
             return
 
-        # Determine check result
-        if bonds_degraded or interfaces_down:
-            if interfaces_down:
-                self.check_result = CheckState.CRITICAL
-            else:
-                self.check_result = CheckState.WARNING
-
-            messages = []
-            if bonds_degraded:
-                for bond in bonds_degraded:
-                    msg = (
-                        f"Bond '{bond['name']}' degraded: {bond['active']}/{bond['expected']} "
-                        f"members active (mode: {bond['mode']})"
-                    )
-                    # Add primary member info for active-backup mode
-                    if bond.get("primary"):
-                        primary_active = bond["primary"] in bond["active_slaves"]
-                        primary_status = "active" if primary_active else "inactive"
-                        msg += f", primary: {bond['primary']} ({primary_status})"
-                    messages.append(msg)
-            if interfaces_down:
-                for iface in interfaces_down:
-                    messages.append(f"Interface '{iface['name']}' is down")
-
-            self.check_message = "\n".join(messages)
+        if interfaces_down:
+            self.check_result = CheckState.CRITICAL
+        elif bonds_degraded:
+            self.check_result = CheckState.WARNING
         else:
             self.check_result = CheckState.OK
-            if name:
+
+        if name:
+            if self.check_result == CheckState.OK:
                 self.check_message = f"Network interface '{name}' is healthy"
             else:
-                self.check_message = (
-                    f"All network interfaces on node '{self.options.node}' are healthy"
-                )
+                self.check_message = entries[0][1]
+            return
+
+        for state, text in entries:
+            self.add_detail(text, state)
+
+        if self.check_result == CheckState.OK:
+            self.check_message = (
+                f"All {len(entries)} network interfaces on node '{self.options.node}' are healthy"
+            )
+        else:
+            problems = []
+            if interfaces_down:
+                problems.append(f"{len(interfaces_down)} of {len(entries)} interfaces down")
+            if bonds_degraded:
+                problems.append(f"{len(bonds_degraded)} of {bond_count} bonds degraded")
+            self.check_message = ", ".join(problems)
 
     def check_task_queue(self) -> None:
         """Check cluster task queue for running and failed tasks."""
@@ -880,9 +907,14 @@ class CheckPVE:
             messages.append(f"({type_details})")
 
         if failed_count > 0:
-            messages.append(f", {failed_count} tasks failed")
+            messages.append(f", {failed_count} of {len(completed_tasks)} tasks failed")
 
         self.check_message = " ".join(messages)
+
+        for task in failed_tasks:
+            self.add_detail(self._format_task(task, task.get("status")), CheckState.WARNING)
+        for task in running_tasks:
+            self.add_detail(self._format_task(task, "running"), CheckState.OK)
 
         # Add time window info if specified
         if delta is not None:
@@ -901,6 +933,16 @@ class CheckPVE:
         # Add performance data
         self.add_perfdata("running_tasks", running_count)
         self.add_perfdata("failed_tasks", failed_count)
+
+    @staticmethod
+    def _format_task(task: Dict, status: str) -> str:
+        """Format a cluster task as detail line."""
+        started = datetime.fromtimestamp(task.get("starttime", 0)).strftime("%Y-%m-%d %H:%M:%S")
+        guest = f" {task['id']}" if task.get("id") else ""
+        return (
+            f"{task.get('type', 'unknown')}{guest} on node '{task.get('node')}' "
+            f"started {started}: {status}"
+        )
 
     def check_certificate(self) -> None:
         """Check SSL certificate expiration for cluster nodes."""
@@ -986,47 +1028,47 @@ class CheckPVE:
                 )
 
                 # Check against thresholds
+                certificate = f"{node_name}/{filename}"
+                expiry = expiry_date.strftime("%Y-%m-%d")
                 if days_left < 0:
-                    expired.append(f"{node_name}/{filename}")
-                elif critical_days.check(days_left, lower=True):
+                    expired.append(certificate)
+                    self.add_detail(f"{certificate} expired on {expiry}", CheckState.CRITICAL)
+                    continue
+
+                detail = f"{certificate} expires in {days_left} days on {expiry}"
+                if critical_days.check(days_left, lower=True):
                     expiring_soon.append((node_name, filename, days_left, "CRITICAL"))
+                    self.add_detail(detail, CheckState.CRITICAL)
                 elif warning_days.check(days_left, lower=True):
                     expiring_soon.append((node_name, filename, days_left, "WARNING"))
+                    self.add_detail(detail, CheckState.WARNING)
+                else:
+                    self.add_detail(detail, CheckState.OK)
 
             except Exception:
                 # If we can't get cert info for a node, skip it
                 continue
 
         # Determine check result
-        if expired:
-            self.check_result = CheckState.CRITICAL
-            self.check_message = f"{len(expired)} certificate(s) expired: {', '.join(expired)}"
-        elif expiring_soon:
-            critical_certs = [c for c in expiring_soon if c[3] == "CRITICAL"]
-            warning_certs = [c for c in expiring_soon if c[3] == "WARNING"]
-
-            if critical_certs:
+        total = len(cert_info)
+        if expired or expiring_soon:
+            if expired or any(c[3] == "CRITICAL" for c in expiring_soon):
                 self.check_result = CheckState.CRITICAL
-                messages = []
-                for node_name, filename, days, _ in critical_certs:
-                    messages.append(f"{node_name}/{filename} expires in {days} days")
-                self.check_message = (
-                    f"{len(critical_certs)} certificate(s) expiring soon: {', '.join(messages)}"
-                )
             else:
                 self.check_result = CheckState.WARNING
-                messages = []
-                for node_name, filename, days, _ in warning_certs:
-                    messages.append(f"{node_name}/{filename} expires in {days} days")
-                self.check_message = (
-                    f"{len(warning_certs)} certificate(s) expiring soon: {', '.join(messages)}"
-                )
+
+            problems = []
+            if expired:
+                problems.append(f"{len(expired)} of {total} certificate(s) expired")
+            if expiring_soon:
+                problems.append(f"{len(expiring_soon)} of {total} certificate(s) expiring soon")
+            self.check_message = ", ".join(problems)
         else:
             self.check_result = CheckState.OK
             if self.options.node:
                 self.check_message = f"Certificate on node '{self.options.node}' is valid"
             else:
-                self.check_message = f"All certificates on {len(nodes)} node(s) are valid"
+                self.check_message = f"All {total} certificate(s) on {len(nodes)} node(s) are valid"
 
         # Add performance data for minimum days left (no unit, just number of days)
         if cert_info:
@@ -1111,12 +1153,19 @@ class CheckPVE:
 
         # absent status = job still running
         tasks = [t for t in tasks if "status" in t]
-        failed = len([t for t in tasks if t["status"] != "OK"])
+        failed = 0
+        for task in tasks:
+            if task["status"] != "OK":
+                failed += 1
+                self.add_detail(self._format_task(task, task["status"]), CheckState.CRITICAL)
+            else:
+                self.add_detail(self._format_task(task, task["status"]), CheckState.OK)
         success = len(tasks) - failed
-        self.check_message = f"{success} backup tasks successful, {failed} backup tasks failed"
+        self.check_message = f"{success} of {len(tasks)} backup tasks successful"
 
         if failed > 0:
             self.check_result = CheckState.CRITICAL
+            self.check_message += f", {failed} failed"
         else:
             self.check_result = CheckState.OK
         if delta is not None:
@@ -1150,14 +1199,19 @@ class CheckPVE:
                 if len(remaining_not_backed_up) > 0:
                     if self.check_result not in [CheckState.CRITICAL, CheckState.UNKNOWN]:
                         self.check_result = CheckState.WARNING
-                        self.check_message += (
-                            "\nThere are unignored guests not covered by any backup schedule: "
-                            + ", ".join(map(str, remaining_not_backed_up))
+                    self.check_message += (
+                        f", {len(remaining_not_backed_up)} guest(s) not covered by any "
+                        "backup schedule"
+                    )
+                    for vmid in remaining_not_backed_up:
+                        self.add_detail(
+                            f"Guest {vmid} is not covered by any backup schedule",
+                            CheckState.WARNING,
                         )
 
                 if unreadable_pools:
-                    self.check_message += (
-                        "\nUnable to fetch members of pool(s) "
+                    self.add_detail(
+                        "Unable to fetch members of pool(s) "
                         + ", ".join(f"'{pool}'" for pool in unreadable_pools)
                         + ". Check if the name is correct and the role has the "
                         "'Pool.Audit' permission"
@@ -1172,6 +1226,7 @@ class CheckPVE:
 
         warnings = []
         criticals = []
+        checked = 0
         snapshots_exist = False
         found = False
         for vm in data:
@@ -1203,11 +1258,18 @@ class CheckPVE:
 
                 snapshot_time = snapshot.get("snaptime", None)
                 snapshot_age = int(datetime.now(timezone.utc).timestamp()) - snapshot_time
+                snap_time = datetime.fromtimestamp(snapshot_time).strftime("%Y-%m-%d %H:%M:%S")
+                detail = f"{vm_id} ({vm_name}): snapshot '{snapshot_name}' taken on {snap_time}"
+                checked += 1
 
                 if threshold_critical is not None and snapshot_age > int(threshold_critical.value):
-                    criticals.append([vm_id, vm_name, snapshot_name, snapshot_time])
+                    criticals.append(snapshot_name)
+                    self.add_detail(detail, CheckState.CRITICAL)
                 elif threshold_warning is not None and snapshot_age > int(threshold_warning.value):
-                    warnings.append([vm_id, vm_name, snapshot_name, snapshot_time])
+                    warnings.append(snapshot_name)
+                    self.add_detail(detail, CheckState.WARNING)
+                else:
+                    self.add_detail(detail, CheckState.OK)
 
             if idx and idx in (vm.get("name", None), vm.get("vmid", None)):
                 found = True
@@ -1223,31 +1285,19 @@ class CheckPVE:
             else:
                 self.check_message = "No snapshots exist"
         else:
-            if idx:
-                self.check_message = f"Age of snapshots of '{idx}' is "
-            else:
-                self.check_message = "Age of snapshots is "
+            subject = f" of '{idx}'" if idx else ""
             if criticals or warnings:
                 if criticals:
                     self.check_result = CheckState.CRITICAL
                 else:
                     self.check_result = CheckState.WARNING
-                self.check_message += "above thresholds"
-                for snapshot in criticals:
-                    snap_time = datetime.fromtimestamp(snapshot[3]).strftime("%Y-%m-%d %H:%M:%S")
-                    self.check_message += (
-                        f"\n{snapshot[0]} ({snapshot[1]}): snapshot "
-                        + f"'{snapshot[2]}' taken on {snap_time} is CRITICAL"
-                    )
-                for snapshot in warnings:
-                    snap_time = datetime.fromtimestamp(snapshot[3]).strftime("%Y-%m-%d %H:%M:%S")
-                    self.check_message += (
-                        f"\n{snapshot[0]} ({snapshot[1]}): snapshot "
-                        + f"'{snapshot[2]}' taken on {snap_time} is WARNING"
-                    )
+                self.check_message = (
+                    f"{len(criticals) + len(warnings)} of {checked} snapshots{subject} "
+                    "are above age thresholds"
+                )
             else:
                 self.check_result = CheckState.OK
-                self.check_message += "OK"
+                self.check_message = f"Age of all {checked} snapshots{subject} is OK"
 
     def check_memory(self) -> None:
         """Check memory usage of Proxmox VE node."""
@@ -1727,6 +1777,7 @@ class CheckPVE:
         self.options = {}
         self.ticket = None
         self.perfdata = []
+        self.details = []
         self.check_result = CheckState.UNKNOWN
         self.check_message = ""
 

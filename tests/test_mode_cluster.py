@@ -35,11 +35,11 @@ def test_check_cluster_status(
     pve_instance.check_cluster_status()
 
     if expected_state == CheckState.OK:
-        expected_message = f"Cluster '{mock_response[0]['name']}' is healthy'"
+        expected_message = f"Cluster '{mock_response[0]['name']}' is healthy"
     elif expected_state == CheckState.CRITICAL:
         expected_message = "Cluster is unhealthy - no quorum"
     else:
         expected_message = "No cluster configuration found"
 
-    assert expected_message in pve_instance.check_message
+    assert expected_message in pve_instance.check_message + pve_instance.get_details()
     assert pve_instance.check_result == expected_state

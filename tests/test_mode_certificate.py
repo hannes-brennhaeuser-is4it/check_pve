@@ -39,7 +39,7 @@ def test_arguments(pve_instance: CheckPVE) -> None:
             30,
             7,
             CheckState.OK,
-            "All certificates on 1 node(s) are valid",
+            "All 1 certificate(s) on 1 node(s) are valid",
         ),
         (
             # Certificate expiring soon - warning (20 days left)
@@ -200,7 +200,7 @@ def test_check_certificate(
     pve_instance.options.threshold_critical = {None: CheckThreshold(critical_days)}
     pve_instance.check_certificate()
 
-    assert expected_message_part in pve_instance.check_message
+    assert expected_message_part in pve_instance.check_message + pve_instance.get_details()
     assert pve_instance.check_result == expected_state
 
 
@@ -234,7 +234,7 @@ def test_check_certificate_default_thresholds(
     pve_instance.check_certificate()
 
     assert pve_instance.check_result == CheckState.WARNING
-    assert "expiring soon" in pve_instance.check_message
+    assert "expiring soon" in pve_instance.check_message + pve_instance.get_details()
 
 
 @patch.object(CheckPVE, "request")
@@ -252,7 +252,7 @@ def test_check_certificate_node_not_found(
     pve_instance.options.threshold_critical = {}
     pve_instance.check_certificate()
 
-    assert "Node 'node2' not found" in pve_instance.check_message
+    assert "Node 'node2' not found" in pve_instance.check_message + pve_instance.get_details()
     assert pve_instance.check_result == CheckState.UNKNOWN
 
 
@@ -269,5 +269,8 @@ def test_check_certificate_empty_response(
     pve_instance.options.threshold_critical = {}
     pve_instance.check_certificate()
 
-    assert "Could not fetch cluster resources from API" in pve_instance.check_message
+    assert (
+        "Could not fetch cluster resources from API"
+        in pve_instance.check_message + pve_instance.get_details()
+    )
     assert pve_instance.check_result == CheckState.UNKNOWN

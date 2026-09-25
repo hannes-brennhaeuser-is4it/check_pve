@@ -10,6 +10,7 @@ def pve_instance() -> CheckPVE:
         instance = CheckPVE()
         instance.options = MagicMock()
         instance.perfdata = []
+        instance.details = []
         instance.check_result = CheckState.UNKNOWN
         instance.check_message = ""
         instance.output = MagicMock()
