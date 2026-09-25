@@ -5,7 +5,7 @@
 # check_pve.py - A check plugin for Proxmox Virtual Environment (PVE).
 # Copyright (C) 2018-2026  Nicolai Buchwitz <nb@tipi-net.de>
 #
-# Version: 1.6.0+is4it.1.0.1
+# Version: 1.6.0+is4it.1.0.2
 #
 # ------------------------------------------------------------------------------
 # This program is free software; you can redistribute it and/or
@@ -149,7 +149,7 @@ class RequestError(Exception):
 class CheckPVE:
     """Check command for Proxmox VE."""
 
-    VERSION = "1.6.0+is4it.1.0.1"
+    VERSION = "1.6.0+is4it.1.0.2"
     API_URL = "https://{hostname}:{port}/api2/json/{command}"
     UNIT_SCALE = {
         "GB": 10**9,
@@ -1077,25 +1077,19 @@ class CheckPVE:
                 f"Your PVE instance version '{data['version']}' ({data['repoid']}) is up to date"
             )
 
-    def _get_pool_members(self, pool: str) -> List[int]:
+    def _get_pool_members(self, pool: str) -> Optional[List[int]]:
         """Get a list of vmids, which are members of a given resource pool.
 
+        Returns None if the pool members could not be fetched.
         NOTE: The request needs the Pool.Audit permission!
         """
-        members = []
-
         try:
             url = self.get_url(f"pools/{pool}")
-            pools = self.request(url, raise_error=True)
-            for pool in pools.get("members", []):
-                members.append(pool["vmid"])
+            data = self.request(url, raise_error=True)
         except RequestError:
-            print(
-                f"Unable to fetch members of pool '{pool}'. "
-                "Check if the name is correct and the role has the 'Pool.Audit' permission"
-            )
+            return None
 
-        return members
+        return [member["vmid"] for member in data.get("members", [])]
 
     def check_vzdump_backup(self, name: Optional[str] = None) -> None:
         """Check for failed vzdump backup jobs."""
@@ -1138,9 +1132,14 @@ class CheckPVE:
                     guest_ids.append(guest["vmid"])
 
                 ignored_vmids = []
+                unreadable_pools = []
                 for pool in self.options.ignore_pools:
                     # ignore vms based on their membership of a certain pool
-                    ignored_vmids += self._get_pool_members(pool)
+                    members = self._get_pool_members(pool)
+                    if members is None:
+                        unreadable_pools.append(pool)
+                    else:
+                        ignored_vmids += members
 
                 if self.options.ignore_vmids:
                     # ignore vms based on their id
@@ -1154,6 +1153,14 @@ class CheckPVE:
                             "\nThere are unignored guests not covered by any backup schedule: "
                             + ", ".join(map(str, remaining_not_backed_up))
                         )
+
+                if unreadable_pools:
+                    self.check_message += (
+                        "\nUnable to fetch members of pool(s) "
+                        + ", ".join(f"'{pool}'" for pool in unreadable_pools)
+                        + ". Check if the name is correct and the role has the "
+                        "'Pool.Audit' permission"
+                    )
 
     def check_snapshot_age(self, idx: Optional[Union[str, int]]) -> None:
         """Check age of snapshots."""
@@ -1690,29 +1697,17 @@ class CheckPVE:
             "task-queue",
             "certificate",
         ]:
-            p.print_usage()
-            message = f"{p.prog}: error: --mode {options.mode} requires node name (--node)"
-            self.output(CheckState.UNKNOWN, message)
-            raise SystemExit(2)
+            p.error(f"--mode {options.mode} requires node name (--node)")
 
         if (
             not options.vmid
             and not options.name
             and options.mode in ("vm", "vm_status", "vm-status")
         ):
-            p.print_usage()
-            message = (
-                f"{p.prog}: error: --mode {options.mode} requires either "
-                "vm name (--name) or id (--vmid)"
-            )
-            self.output(CheckState.UNKNOWN, message)
-            raise SystemExit(2)
+            p.error(f"--mode {options.mode} requires either vm name (--name) or id (--vmid)")
 
         if not options.name and options.mode == "storage":
-            p.print_usage()
-            message = f"{p.prog}: error: --mode {options.mode} requires storage name (--name)"
-            self.output(CheckState.UNKNOWN, message)
-            raise SystemExit(2)
+            p.error(f"--mode {options.mode} requires storage name (--name)")
 
         if options.threshold_warning and options.threshold_critical:
             if options.mode not in ["subscription", "certificate"] and not compare_thresholds(

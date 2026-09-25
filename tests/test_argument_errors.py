@@ -22,6 +22,13 @@ CLI_ARGS = "-e endpoint -u user -p password"
             "Critical value must be greater than warning value",
             id="threshold-order",
         ),
+        pytest.param(f"{CLI_ARGS} -m cpu", "--mode cpu requires node name (--node)", id="node"),
+        pytest.param(
+            f"{CLI_ARGS} -m vm", "--mode vm requires either vm name (--name) or id", id="vm"
+        ),
+        pytest.param(
+            f"{CLI_ARGS} -m storage -n pve", "--mode storage requires storage name", id="storage"
+        ),
     ],
 )
 def test_argument_error_exits_unknown(
